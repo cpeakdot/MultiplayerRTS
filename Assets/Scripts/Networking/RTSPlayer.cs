@@ -5,6 +5,7 @@ using Mirror;
 
 public class RTSPlayer : NetworkBehaviour
 {
+    [SerializeField] private Transform cameraTransform;
     [SerializeField] private Building[] buildings = new Building[0];
     [SerializeField] private LayerMask buildingBlockLayer;
     [SerializeField] private float buildingRange = 5f;
@@ -14,13 +15,19 @@ public class RTSPlayer : NetworkBehaviour
     [SyncVar(hook = nameof(ClientHandleResourcesUpdated))]
     private int resources = 500;
 
+    [SyncVar(hook = nameof(AuthorityHandlePartyOwnerStateUpdated))]
+    private bool isPartyOwner = false;
+    public static event Action<bool> AuthorityOnPartyOwnerStateUpdated;
     public event Action<int> ClientOnResourcesUpdated;
-    private Color teamColor;
+    [SerializeField] private Color teamColor;
     public List<Unit> GetMyUnits => myUnits;
     public List<Building> GetMyBuildings => myBuildings;
     public int GetResources => resources;
     public int SetResources {[Server] set { resources += value; } }
     public Color GetTeamColor => teamColor;
+    public Transform GetCameraTransform => cameraTransform;
+
+    public bool GetIsPartyOwner => isPartyOwner;
 
     #region Server
 
@@ -40,6 +47,12 @@ public class RTSPlayer : NetworkBehaviour
 
         Building.ServerOnBuildingSpawn -= ServerHandleOnBuildingSpawn;
         Building.ServerOnBuildingDespawn -= ServerHandleOnBuildingDespawn;
+    }
+
+    [Server]
+    public void SetPartyOwner(bool newValue)
+    {
+        isPartyOwner = newValue;
     }
 
     [Server]
@@ -74,6 +87,14 @@ public class RTSPlayer : NetworkBehaviour
         if (unit.connectionToClient.connectionId != connectionToClient.connectionId) { return; }
 
         myUnits.Remove(unit);
+    }
+
+    [Command]
+    public void CmdStartGame()
+    {
+        if (!isPartyOwner) { return; }
+
+        ((RTSNetworkManager)NetworkManager.singleton).StartGame();
     }
 
     [Command]
@@ -116,17 +137,36 @@ public class RTSPlayer : NetworkBehaviour
         Unit.AuthorityOnUnitDespawned += UNIT_AuthorityOnUnitDespawned;
 
         Building.AuthorityOnBuildingSpawn += AuthorityHandleOnBuildingSpawn;
-        Building.AuthorityOnBuildingSpawn += AuthorityHandleOnBuildingDespawn;
+        Building.AuthorityOnBuildingDespawn += AuthorityHandleOnBuildingDespawn;
+    }
+
+    public override void OnStartClient()
+    {
+        if (NetworkServer.active) { return; }
+
+        ((RTSNetworkManager)NetworkManager.singleton).players.Add(this);
     }
 
     public override void OnStopClient()
     {
-        if (!isClientOnly || !isOwned) { return; }
+        if (!isClientOnly) { return; }
+
+        ((RTSNetworkManager)NetworkManager.singleton).players.Remove(this);
+
+        if (!isOwned) { return; }
+
         Unit.AuthorityOnUnitSpawned -= UNIT_AuthorityOnUnitSpawned;
         Unit.AuthorityOnUnitDespawned -= UNIT_AuthorityOnUnitDespawned;
 
         Building.AuthorityOnBuildingSpawn -= AuthorityHandleOnBuildingSpawn;
-        Building.AuthorityOnBuildingSpawn -= AuthorityHandleOnBuildingDespawn;
+        Building.AuthorityOnBuildingDespawn -= AuthorityHandleOnBuildingDespawn;
+    }
+
+    private void AuthorityHandlePartyOwnerStateUpdated(bool oldState, bool newState)
+    {
+        if (!isOwned) { return; }
+
+        AuthorityOnPartyOwnerStateUpdated?.Invoke(newState);
     }
 
     private void AuthorityHandleOnBuildingSpawn(Building building)

@@ -33,6 +33,7 @@ public class BuildingButton : MonoBehaviour, IPointerDownHandler, IPointerUpHand
         {
             player = NetworkClient.connection.identity.GetComponent<RTSPlayer>();
         }
+
         if (buildingPreviewInstance == null) { return; }
 
         UpdateBuildingPreview();
@@ -68,6 +69,11 @@ public class BuildingButton : MonoBehaviour, IPointerDownHandler, IPointerUpHand
 
     private void UpdateBuildingPreview()
     {
+        if(!buildingBoxCollider)
+        {
+            buildingBoxCollider = building.GetComponent<BoxCollider>();
+        }
+
         Ray ray = Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue());
 
         if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, floorMask)) { return; }
@@ -81,6 +87,6 @@ public class BuildingButton : MonoBehaviour, IPointerDownHandler, IPointerUpHand
 
         Color color = player.CanPlaceBuilding(buildingBoxCollider, hit.point) ? Color.green : Color.red;
 
-        buildingRendererInstance.material.SetColor("_BaseColor", color);
+        buildingRendererInstance.materials[0].color = color;
     }
 }
